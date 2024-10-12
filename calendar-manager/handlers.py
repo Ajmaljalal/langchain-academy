@@ -20,10 +20,10 @@ def index():
 def check_login():
     return jsonify({'logged_in': 'credentials' in session})
 
-def login():
+def login(app):
     flow = Flow.from_client_config(
-        client_config=current_app.config['CLIENT_CONFIG'],
-        scopes=current_app.config['SCOPES']
+        client_config=app.config['CLIENT_CONFIG'],
+        scopes=app.config['SCOPES']
     )
     flow.redirect_uri = 'http://127.0.0.1:5000/oauth2callback'
     authorization_url, state = flow.authorization_url(
@@ -34,7 +34,7 @@ def login():
     session['state'] = state
     return redirect(authorization_url)
 
-def oauth2callback():
+def oauth2callback(app):
     logging.debug(f"Received callback at URL: {request.url}")
 
     if 'error' in request.args:
@@ -48,8 +48,8 @@ def oauth2callback():
     try:
         state = session['state']
         flow = Flow.from_client_config(
-            client_config=current_app.config['CLIENT_CONFIG'],
-            scopes=current_app.config['SCOPES'],
+            client_config=app.config['CLIENT_CONFIG'],
+            scopes=app.config['SCOPES'],
             state=state
         )
         flow.redirect_uri = 'http://127.0.0.1:5000/oauth2callback'
@@ -353,10 +353,20 @@ def handle_email_manager():
 
         # Extract the AI's response
         ai_responses = [msg.content for msg in result['messages'] if isinstance(msg, AIMessage)]
-        
+        print('ai_responses', ai_responses)
+        # Create a serializable version of the result
+        serializable_result = {
+            'messages': [
+                {
+                    'type': type(msg).__name__,
+                    'content': msg.content
+                } for msg in result['messages']
+            ]
+        }
+
         return jsonify({
             'response': ai_responses,
-            'full_result': result
+            'full_result': serializable_result
         })
 
     except Exception as e:
