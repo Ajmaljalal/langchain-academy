@@ -223,6 +223,9 @@ $RECYCLE.BIN/
 
 lc-academy-env/
 new_lc_academy_env/
-client_secret.json/
+calendar-manager/client_secret.json
 python-env/
 
+# Add this line to ignore client_secret.json in the root directory
+client_secret.json
+calendar-manager/user_credentials/default_user_creds.json

@@ -1,4 +1,4 @@
-from flask import request, redirect, session, jsonify, render_template, url_for, abort
+from flask import app, request, redirect, session, jsonify, render_template, url_for, abort, current_app
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -8,8 +8,11 @@ import logging
 from datetime import datetime, timedelta
 import pytz
 from oauthlib.oauth2.rfc6749.errors import OAuth2Error
-from utils import create_message, credentials_to_dict, get_credentials_from_session
+from utils import create_message, credentials_to_dict, get_credentials
 import json
+import os
+from email_manager_agent import email_manager_agent
+from langchain_core.messages import HumanMessage, AIMessage
 
 def index():
     return render_template('index.html')
@@ -17,10 +20,10 @@ def index():
 def check_login():
     return jsonify({'logged_in': 'credentials' in session})
 
-def login(app):
+def login():
     flow = Flow.from_client_config(
-        client_config=app.config['CLIENT_CONFIG'],
-        scopes=app.config['SCOPES']
+        client_config=current_app.config['CLIENT_CONFIG'],
+        scopes=current_app.config['SCOPES']
     )
     flow.redirect_uri = 'http://127.0.0.1:5000/oauth2callback'
     authorization_url, state = flow.authorization_url(
@@ -31,7 +34,7 @@ def login(app):
     session['state'] = state
     return redirect(authorization_url)
 
-def oauth2callback(app):
+def oauth2callback():
     logging.debug(f"Received callback at URL: {request.url}")
 
     if 'error' in request.args:
@@ -45,8 +48,8 @@ def oauth2callback(app):
     try:
         state = session['state']
         flow = Flow.from_client_config(
-            client_config=app.config['CLIENT_CONFIG'],
-            scopes=app.config['SCOPES'],
+            client_config=current_app.config['CLIENT_CONFIG'],
+            scopes=current_app.config['SCOPES'],
             state=state
         )
         flow.redirect_uri = 'http://127.0.0.1:5000/oauth2callback'
@@ -54,16 +57,25 @@ def oauth2callback(app):
         # Fetch the token
         flow.fetch_token(authorization_response=request.url)
 
-        # Get credentials and store in session
+        # Get credentials
         credentials = flow.credentials
-        session['credentials'] = credentials_to_dict(credentials)
+        creds_dict = credentials_to_dict(credentials)
         
-        # Log the credentials for debugging
-        logging.debug(f"Stored credentials: {session['credentials']}")
+        # Store credentials in session
+        session['credentials'] = creds_dict
+        
+        # Save credentials to a local file
+        user_id = session.get('user_id', 'default_user')  # You might want to implement user identification
+        creds_file_path = os.path.join(current_app.config['CREDENTIALS_DIR'], f'{user_id}_creds.json')
+        os.makedirs(os.path.dirname(creds_file_path), exist_ok=True)
+        with open(creds_file_path, 'w') as f:
+            json.dump(creds_dict, f)
+        
+        logging.debug(f"Stored credentials in file: {creds_file_path}")
 
         # Check if all required scopes are present
         granted_scopes = set(credentials.scopes)
-        required_scopes = set(app.config['SCOPES'])
+        required_scopes = set(current_app.config['SCOPES'])
         
         if not required_scopes.issubset(granted_scopes):
             missing_scopes = required_scopes - granted_scopes
@@ -81,7 +93,8 @@ def oauth2callback(app):
         return jsonify({'error': 'An unexpected error occurred. Please try again.'}), 500
 
 def calendar_events():
-    if 'credentials' not in session:
+    credentials = get_credentials(current_app, session)
+    if not credentials:
         return jsonify({'error': 'Not logged in'}), 401
 
     # Get month and year from query parameters, default to current month if not provided
@@ -100,7 +113,6 @@ def calendar_events():
         end_of_month = datetime(year, month + 1, 1) - timedelta(seconds=1)
     end_of_month = end_of_month.isoformat() + 'Z'
 
-    credentials = Credentials(**session['credentials'])
     service = build('calendar', 'v3', credentials=credentials)
 
     events_result = service.events().list(calendarId='primary', 
@@ -128,7 +140,8 @@ def calendar_events():
     return jsonify(formatted_events)
 
 def availabilities():
-    if 'credentials' not in session:
+    credentials = get_credentials(current_app, session)
+    if not credentials:
         return jsonify({'error': 'Not logged in'}), 401
 
     # Get the current month and year
@@ -181,13 +194,16 @@ def availabilities():
     return jsonify(available_times)
 
 def todays_emails():
-    if 'credentials' not in session:
+    # print('todays_emails start')
+    credentials = get_credentials(current_app, session)
+    # print('todays_emails credentials', credentials)
+    if not credentials:
         return jsonify({'error': 'Not logged in'}), 401
 
     try:
-        # Convert credentials dict to JSON string, then back to dict
-        credentials_dict = json.loads(json.dumps(session['credentials']))
-        credentials = Credentials(**credentials_dict)
+        # # Convert credentials dict to JSON string, then back to dict
+        # credentials_dict = json.loads(json.dumps(session['credentials']))
+        # credentials = Credentials(**credentials_dict)
 
         service = build('gmail', 'v1', credentials=credentials)
 
@@ -233,9 +249,9 @@ def todays_emails():
         return jsonify({'error': str(e)}), 500
     
 def contacts():
-    if 'credentials' not in session:
+    credentials = get_credentials(current_app, session)
+    if not credentials:
         return jsonify({'error': 'Not logged in'}), 401
-    credentials = Credentials(session['credentials'])
     service = build('gmail', 'v1', credentials=credentials)
     results = service.users().messages().list(userId='me', maxResults=500).execute()
     messages = results.get('messages', [])
@@ -251,13 +267,14 @@ def contacts():
     return jsonify(list(contacts))
 
 def send_email():
-    if 'credentials' not in session:
+    credentials = get_credentials(current_app, session)
+    if not credentials:
         return jsonify({'error': 'Not logged in'}), 401
 
     try:
         # Convert credentials dict to JSON string, then back to dict
-        credentials_dict = json.loads(json.dumps(session['credentials']))
-        credentials = Credentials(**credentials_dict)
+        # credentials_dict = json.loads(json.dumps(session['credentials']))
+        # credentials = Credentials(**credentials_dict)
 
         service = build('gmail', 'v1', credentials=credentials)
 
@@ -281,9 +298,8 @@ def send_email():
         return jsonify({'error': str(e)}), 500
     
 def create_event():
-    credentials = get_credentials_from_session(session)
+    credentials = get_credentials(current_app, session)
     if not credentials:
-        logging.error("Attempted to create event without credentials.")
         return jsonify({'error': 'Not logged in'}), 401
 
     try:
@@ -322,3 +338,28 @@ def create_event():
     except Exception as e:
         logging.error(f"Unexpected error in create_event: {str(e)}")
         return jsonify({'error': 'An unexpected error occurred.'}), 500
+    
+def handle_email_manager():
+    try:
+        data = request.json
+        user_input = data.get('input')
+
+        if not user_input:
+            return jsonify({'error': 'No input provided'}), 400
+
+        result = email_manager_agent.invoke({
+            "messages": [HumanMessage(content=user_input)]
+        })
+
+        # Extract the AI's response
+        ai_responses = [msg.content for msg in result['messages'] if isinstance(msg, AIMessage)]
+        
+        return jsonify({
+            'response': ai_responses,
+            'full_result': result
+        })
+
+    except Exception as e:
+        logging.error(f"Error in handle_email_manager: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    

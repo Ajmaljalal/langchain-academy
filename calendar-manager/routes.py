@@ -14,5 +14,6 @@ def register_routes(app):
     bp.route('/contacts', endpoint='contacts')(handlers.contacts)
     bp.route('/send_email', methods=['POST'], endpoint='send_email')(handlers.send_email)
     bp.route('/create_event', methods=['POST'], endpoint='create_event')(handlers.create_event)
+    # bp.route('/email_manager', methods=['POST'], endpoint='email_manager')(handlers.handle_email_manager)
 
     app.register_blueprint(bp)

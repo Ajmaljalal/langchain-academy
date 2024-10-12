@@ -29,4 +29,5 @@ def configure_app(app):
     app.config['CLIENT_CONFIG'] = CLIENT_CONFIG
     app.config['SCOPES'] = SCOPES
     app.config['CLIENT'] = client
+    app.config['CREDENTIALS_DIR'] = os.path.join(app.root_path, 'user_credentials')
 

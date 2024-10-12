@@ -4,6 +4,7 @@ import base64
 from email.mime.text import MIMEText
 import json
 from google.oauth2.credentials import Credentials
+import os
 
 def create_message(sender, to, subject, message_text):
     message = MIMEText(message_text)
@@ -54,4 +55,27 @@ def get_credentials_from_session(session):
             if isinstance(credentials_dict['scopes'], str):
                 credentials_dict['scopes'] = [s.strip() for s in credentials_dict['scopes'].split(',')]
     
-    return Credentials(**credentials_dict)
+    return Credentials(
+        token=credentials_dict.get('token'),
+        refresh_token=credentials_dict.get('refresh_token'),
+        token_uri=credentials_dict.get('token_uri'),
+        client_id=credentials_dict.get('client_id'),
+        client_secret=credentials_dict.get('client_secret'),
+        scopes=credentials_dict.get('scopes')
+    )
+
+def get_credentials(app, session):
+    if 'credentials' in session:
+        return get_credentials_from_session(session)
+    user_id = session.get('user_id', 'default_user')
+    creds_file_path = os.path.join(app.config['CREDENTIALS_DIR'], f'{user_id}_creds.json')
+    if os.path.exists(creds_file_path):
+        try:
+            with open(creds_file_path, 'r') as f:
+                creds_dict = json.load(f)
+                session['credentials'] = creds_dict # Update session with file contents
+                return get_credentials_from_session(session)
+        except (IOError, json.JSONDecodeError) as e:
+            logging.error(f"Error reading credentials file {creds_file_path}: {e}")
+            return None
+    return None
