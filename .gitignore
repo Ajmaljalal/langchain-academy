@@ -217,3 +217,11 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
+
+
+# envs
+
+lc-academy-env
+new_lc_academy_env
+callendar-manager/client_secret.json
+
