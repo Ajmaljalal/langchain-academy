@@ -221,7 +221,8 @@ $RECYCLE.BIN/
 
 # envs
 
-lc-academy-env
-new_lc_academy_env
-callendar-manager/client_secret.json
+lc-academy-env/
+new_lc_academy_env/
+client_secret.json/
+python-env/
 
