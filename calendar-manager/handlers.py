@@ -13,6 +13,7 @@ import json
 import os
 from email_manager_agent import email_manager_agent
 from langchain_core.messages import HumanMessage, AIMessage
+from werkzeug.wrappers import Response
 
 def index():
     return render_template('index.html')
@@ -21,6 +22,12 @@ def check_login():
     return jsonify({'logged_in': 'credentials' in session})
 
 def login(app):
+    if 'credentials' in session:
+        # Check if credentials are still valid
+        credentials = get_credentials(app, session)
+        if not isinstance(credentials, redirect):
+            return redirect(url_for('main.calendar_events'))
+
     flow = Flow.from_client_config(
         client_config=app.config['CLIENT_CONFIG'],
         scopes=app.config['SCOPES']
@@ -28,7 +35,7 @@ def login(app):
     flow.redirect_uri = 'http://127.0.0.1:5000/oauth2callback'
     authorization_url, state = flow.authorization_url(
         access_type='offline',
-        include_granted_scopes='false',
+        include_granted_scopes='true',
         prompt='consent'  # Forces the consent screen to appear
     )
     session['state'] = state
@@ -72,6 +79,7 @@ def oauth2callback(app):
             json.dump(creds_dict, f)
         
         logging.debug(f"Stored credentials in file: {creds_file_path}")
+        logging.debug(f"Granted scopes: {credentials.scopes}")
 
         # Check if all required scopes are present
         granted_scopes = set(credentials.scopes)
@@ -194,17 +202,11 @@ def availabilities():
     return jsonify(available_times)
 
 def todays_emails():
-    # print('todays_emails start')
     credentials = get_credentials(current_app, session)
-    # print('todays_emails credentials', credentials)
-    if not credentials:
+    if credentials is None or isinstance(credentials, Response):
         return jsonify({'error': 'Not logged in'}), 401
 
     try:
-        # # Convert credentials dict to JSON string, then back to dict
-        # credentials_dict = json.loads(json.dumps(session['credentials']))
-        # credentials = Credentials(**credentials_dict)
-
         service = build('gmail', 'v1', credentials=credentials)
 
         today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -339,6 +341,34 @@ def create_event():
         logging.error(f"Unexpected error in create_event: {str(e)}")
         return jsonify({'error': 'An unexpected error occurred.'}), 500
     
+
+def reply_email():
+    credentials = get_credentials(current_app, session)
+    if not credentials:
+        return jsonify({'error': 'Not logged in'}), 401
+
+    data = request.json
+    recipient = data.get('to')
+    subject = data.get('subject')
+    body = data.get('body')
+
+    if not all([recipient, body]):
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    try:
+        service = build('gmail', 'v1', credentials=credentials)
+        message = create_message('me', recipient, 'Re: ' + subject, body)
+        sent_message = service.users().messages().send(userId='me', body=message).execute()
+        return jsonify({'message': 'Email sent successfully', 'id': sent_message['id']})
+
+    except HttpError as error:
+        logging.error(f"An HTTP error occurred: {error}")
+        return jsonify({'error': str(error)}), 500
+    except Exception as e:
+        logging.error(f"Error sending email: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    
+
 def handle_email_manager():
     try:
         data = request.json
@@ -353,7 +383,6 @@ def handle_email_manager():
 
         # Extract the AI's response
         ai_responses = [msg.content for msg in result['messages'] if isinstance(msg, AIMessage)]
-        print('ai_responses', ai_responses)
         # Create a serializable version of the result
         serializable_result = {
             'messages': [

@@ -15,11 +15,13 @@ def configure_app(app):
     with open(CLIENT_SECRETS_FILE) as client_secret_file:
         CLIENT_CONFIG = json.load(client_secret_file)
 
-    # Update the SCOPES variable
+    # Update the SCOPES variable to match the granted scopes
     SCOPES = [
+        'https://www.googleapis.com/auth/gmail.compose',
+        'https://www.googleapis.com/auth/contacts.readonly',
+        'https://www.googleapis.com/auth/calendar.readonly',
         'https://www.googleapis.com/auth/calendar',
-        'https://www.googleapis.com/auth/gmail.modify',
-        'https://www.googleapis.com/auth/contacts.readonly'
+        'https://www.googleapis.com/auth/gmail.modify'
     ]
 
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -30,4 +32,3 @@ def configure_app(app):
     app.config['SCOPES'] = SCOPES
     app.config['CLIENT'] = client
     app.config['CREDENTIALS_DIR'] = os.path.join(app.root_path, 'user_credentials')
-

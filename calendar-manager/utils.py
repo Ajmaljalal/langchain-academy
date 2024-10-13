@@ -4,7 +4,9 @@ import base64
 from email.mime.text import MIMEText
 import json
 from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
 import os
+from flask import session, redirect, url_for
 
 def create_message(sender, to, subject, message_text):
     message = MIMEText(message_text)
@@ -36,46 +38,56 @@ def credentials_to_dict(credentials):
         'scopes': credentials.scopes
     }
 
-def get_credentials_from_session(session):
-    if 'credentials' not in session:
-        return None
-    
-    credentials_dict = session['credentials']
-    
-    # Ensure all values are strings
-    credentials_dict = {k: str(v) if v is not None else None for k, v in credentials_dict.items()}
-    
-    # Handle 'scopes' conversion
-    if 'scopes' in credentials_dict:
-        try:
-            if isinstance(credentials_dict['scopes'], str):
-                credentials_dict['scopes'] = json.loads(credentials_dict['scopes'])
-        except json.JSONDecodeError:
-            # If 'scopes' is not a valid JSON string, assume it's already a list
-            if isinstance(credentials_dict['scopes'], str):
-                credentials_dict['scopes'] = [s.strip() for s in credentials_dict['scopes'].split(',')]
-    
-    return Credentials(
-        token=credentials_dict.get('token'),
-        refresh_token=credentials_dict.get('refresh_token'),
-        token_uri=credentials_dict.get('token_uri'),
-        client_id=credentials_dict.get('client_id'),
-        client_secret=credentials_dict.get('client_secret'),
-        scopes=credentials_dict.get('scopes')
-    )
-
 def get_credentials(app, session):
-    if 'credentials' in session:
-        return get_credentials_from_session(session)
+    logging.info("Attempting to get credentials")
+    
+    # First, try to get credentials from the local file
     user_id = session.get('user_id', 'default_user')
     creds_file_path = os.path.join(app.config['CREDENTIALS_DIR'], f'{user_id}_creds.json')
+    
     if os.path.exists(creds_file_path):
+        logging.info(f"Found credentials file: {creds_file_path}")
+        with open(creds_file_path, 'r') as f:
+            credentials_dict = json.load(f)
+        credentials = Credentials(**credentials_dict)
+    elif 'credentials' in session:
+        logging.info("Using credentials from session")
+        credentials_dict = session['credentials']
+        credentials = Credentials(**credentials_dict)
+    else:
+        logging.warning("No credentials found in file or session")
+        return redirect(url_for('main.login'))
+
+    if credentials and credentials.expired and credentials.refresh_token:
+        logging.info("Credentials expired. Attempting to refresh.")
         try:
-            with open(creds_file_path, 'r') as f:
-                creds_dict = json.load(f)
-                session['credentials'] = creds_dict # Update session with file contents
-                return get_credentials_from_session(session)
-        except (IOError, json.JSONDecodeError) as e:
-            logging.error(f"Error reading credentials file {creds_file_path}: {e}")
-            return None
-    return None
+            credentials.refresh(Request())
+            updated_creds_dict = credentials_to_dict(credentials)
+            
+            # Update both file and session
+            with open(creds_file_path, 'w') as f:
+                json.dump(updated_creds_dict, f)
+            session['credentials'] = updated_creds_dict
+            
+            logging.info("Credentials refreshed successfully")
+        except Exception as e:
+            logging.error(f"Error refreshing credentials: {str(e)}")
+            # Clear invalid credentials and redirect to login
+            if os.path.exists(creds_file_path):
+                os.remove(creds_file_path)
+            if 'credentials' in session:
+                del session['credentials']
+            return redirect(url_for('main.login'))
+
+    if not credentials or not credentials.valid:
+        logging.warning("Credentials are not valid")
+        # Clear invalid credentials and redirect to login
+        if os.path.exists(creds_file_path):
+            os.remove(creds_file_path)
+        if 'credentials' in session:
+            del session['credentials']
+        return redirect(url_for('main.login'))
+
+    # Ensure the session has the most up-to-date credentials
+    session['credentials'] = credentials_to_dict(credentials)
+    return credentials
