@@ -11,7 +11,7 @@ from oauthlib.oauth2.rfc6749.errors import OAuth2Error
 from utils import create_message, credentials_to_dict, get_credentials
 import json
 import os
-from email_manager_agent import email_manager_agent
+from email_manager_agent import run_email_manager
 from langchain_core.messages import HumanMessage, AIMessage
 from werkzeug.wrappers import Response
 
@@ -274,10 +274,6 @@ def send_email():
         return jsonify({'error': 'Not logged in'}), 401
 
     try:
-        # Convert credentials dict to JSON string, then back to dict
-        # credentials_dict = json.loads(json.dumps(session['credentials']))
-        # credentials = Credentials(**credentials_dict)
-
         service = build('gmail', 'v1', credentials=credentials)
 
         data = request.json
@@ -370,35 +366,22 @@ def reply_email():
     
 
 def handle_email_manager():
+    data = request.json
+    user_input = data.get('input')  # Ensure we're retrieving the correct key
+    thread_id = data.get('thread_id', 'default_thread')
+
+    if not user_input:
+        return jsonify({"error": "User input is required"}), 400
+
     try:
-        data = request.json
-        user_input = data.get('input')
-
-        if not user_input:
-            return jsonify({'error': 'No input provided'}), 400
-
-        result = email_manager_agent.invoke({
-            "messages": [HumanMessage(content=user_input)]
-        })
-
-        # Extract the AI's response
-        ai_responses = [msg.content for msg in result['messages'] if isinstance(msg, AIMessage)]
-        # Create a serializable version of the result
-        serializable_result = {
-            'messages': [
-                {
-                    'type': type(msg).__name__,
-                    'content': msg.content
-                } for msg in result['messages']
-            ]
-        }
-
-        return jsonify({
-            'response': ai_responses,
-            'full_result': serializable_result
-        })
-
+        result = run_email_manager(user_input, thread_id)
+        # Assuming the last message in the result is the AI's response
+        if not result:
+            logging.warning("No messages returned from email_manager_agent.")
+            ai_response = "No response generated."
+        else:
+            ai_response = result[-1].content if hasattr(result[-1], 'content') else "No response generated."
+        
+        return jsonify({"response": [ai_response]})  # Wrap response in a list
     except Exception as e:
-        logging.error(f"Error in handle_email_manager: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-    
+        return jsonify({"error": str(e)}), 500

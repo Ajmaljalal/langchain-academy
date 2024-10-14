@@ -1,3 +1,4 @@
+import logging
 from langgraph.graph import StateGraph, MessagesState, START
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
@@ -5,6 +6,9 @@ from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import ToolNode, tools_condition
 import json
 import requests
+from langgraph.checkpoint.memory import MemorySaver
+
+logging.basicConfig(level=logging.DEBUG)
 
 # Define our state
 class EmailState(MessagesState):
@@ -57,30 +61,28 @@ def send_email(recipient: str, subject: str, body: str) -> str:
         return f"Failed to send email: {send_email_response.text}"
 
 # Create LLM and bind tools
-llm = ChatOpenAI()
+llm = ChatOpenAI(model="gpt-4o")
 llm_with_tools = llm.bind_tools([retrieve_emails, send_email])
 
 # System message
 system_prompt = """
-You are a helpful assistant tasked with managing emails. Your responsibilities include retrieving, analyzing, extracting information from emails, and sending emails based on user requests. Present information in a smooth, readable format.
+You are a helpful assistant managing emails, responsible for retrieving, analyzing, summarizing, and sending emails based on user requests. Your role includes presenting information in a clear, concise, and smooth narrative.
 
-## For retrieving emails:
-  - Gather the email details and summarize the content of the email in a short paragraph.
-  - Format and present the email in a complete, narrative style.
-  - Do not use bullet points.
-  - If the email is a reply, mention that,
-  - exclude any irrelevant information such as signatures, footers, or other non-content related text.
-  - exclude special characters and formatting such as HTML.
+### Retrieving Emails:
+- Summarize the email content in one brief, clear paragraph.
+- Present the email details in a complete, narrative style.
+- Mention if it's a reply and exclude irrelevant content like signatures, footers, or non-essential text.
+- Remove special characters or formatting such as HTML.
 
-## For sending emails:
-  - Confirm the recipient's email address and ensure it is formatted correctly.
-  - Draft the email including the subject and body as per the user's specifications.
-  - Confirm with the user before sending, if required.
+### Sending Emails:
+- Verify the recipient’s email address is correct.
+- Draft the subject and body of the email as requested.
+- Confirm with the user before sending, if needed.
 
-## Notes
-  - Ensure clarity and completeness in email details while maintaining a conversational flow.
-  - Handle edge cases where emails cannot be retrieved or sent due to technical issues, and provide appropriate feedback to the user.
-  - Always maintain privacy and security standards when handling email content.
+### Notes:
+- Ensure clarity, completeness, and a conversational flow.
+- Address any technical issues with retrieving or sending emails and notify the user.
+- Maintain privacy and security standards at all times.
 """
 sys_msg = SystemMessage(content=system_prompt)
 
@@ -103,8 +105,31 @@ workflow.add_conditional_edges(
 )
 workflow.add_edge("tools", "assistant")
 
+memory = MemorySaver()
+
 # Compile the graph
-email_manager_agent = workflow.compile()
+email_manager_agent = workflow.compile(checkpointer=memory)
+
+def run_email_manager(user_input: str, thread_id: str):
+    if not user_input or not isinstance(user_input, str):
+        raise ValueError("user_input must be a non-empty string.")
+    
+    config = {"configurable": {"thread_id": thread_id}}
+    messages = [HumanMessage(content=user_input)]
+    
+    try:
+        result = email_manager_agent.invoke({"messages": messages}, config)
+
+        for m in result['messages']:
+            m.pretty_print()
+        
+
+        return result.get("messages", [])
+    except Exception as e:
+        logging.error(f"Exception during run_email_manager: {str(e)}")
+        raise
+
+
 
 
 
