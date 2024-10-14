@@ -91,7 +91,7 @@ def oauth2callback(app):
             return jsonify({'error': 'Insufficient permissions granted. Please try logging in again.'}), 400
 
         # Redirect to calendar_events page
-        return redirect(url_for('main.calendar_events'))
+        return redirect(url_for('main.index'))
 
     except OAuth2Error as e:
         logging.error(f"OAuth2 error in oauth2callback: {str(e)}")
