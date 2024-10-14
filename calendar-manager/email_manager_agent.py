@@ -12,6 +12,15 @@ class EmailState(MessagesState):
 
 # Tool definitions (these would call actual APIs in a real implementation)
 @tool
+def reply_to_email(recipient: str, subject: str, body: str) -> str:
+    """Replies to an email with the given recipient, subject, and body."""
+    reply_email_response = requests.post('http://127.0.0.1:5000/reply_email', json={'to': recipient, 'subject': subject, 'body': body})
+    if reply_email_response.status_code == 200:
+        return f"Email replied to {recipient}"
+    else:
+        return f"Failed to reply to email: {reply_email_response.text}"
+
+@tool
 def retrieve_emails() -> str:
     """Retrieves today's emails."""
     try:
@@ -41,7 +50,11 @@ def retrieve_emails() -> str:
 @tool
 def send_email(recipient: str, subject: str, body: str) -> str:
     """Sends an email with the given recipient, subject, and body."""
-    return f"Email sent to {recipient} with subject '{subject}'"
+    send_email_response = requests.post('http://127.0.0.1:5000/send_email', json={'to': recipient, 'subject': subject, 'body': body})
+    if send_email_response.status_code == 200:
+        return f"Email sent to {recipient} with subject '{subject}'"
+    else:
+        return f"Failed to send email: {send_email_response.text}"
 
 # Create LLM and bind tools
 llm = ChatOpenAI()
@@ -49,22 +62,20 @@ llm_with_tools = llm.bind_tools([retrieve_emails, send_email])
 
 # System message
 system_prompt = """
-You are a helpful assistant tasked with managing emails. Your responsibilities include retrieving and sending emails based on user requests. Present information in a smooth, readable format rather than using simple colon-separated lists.
+You are a helpful assistant tasked with managing emails. Your responsibilities include retrieving, analyzing, extracting information from emails, and sending emails based on user requests. Present information in a smooth, readable format.
 
 ## For retrieving emails:
-  - Identify and confirm the specific email(s) the user wants to retrieve.
   - Gather the email details and summarize the content of the email in a short paragraph.
   - Format and present the email in a complete, narrative style.
-  ### Example of how to format an email, do not use bullet points:
-    - Lisa has sent an email today at 9:30 am regarding the budget proposal, noting that she attached the updated version for your review and is open to discussing any adjustments before finalizing. John has sent an email today at 10:15 confirming the meeting scheduled for tomorrow at 2pm. You also have an email from Wick today at 11:00 am asking if you had any updates on the project timeline.
+  - Do not use bullet points.
+  - If the email is a reply, mention that,
+  - exclude any irrelevant information such as signatures, footers, or other non-content related text.
+  - exclude special characters and formatting such as HTML.
 
 ## For sending emails:
   - Confirm the recipient's email address and ensure it is formatted correctly.
   - Draft the email including the subject and body as per the user's specifications.
   - Confirm with the user before sending, if required.
-
-  ### Examples
-    - I'll send an email to Tom with the subject "Update on Project Alpha." Let me know if you'd like to include any specific details about the project's progress.
 
 ## Notes
   - Ensure clarity and completeness in email details while maintaining a conversational flow.
