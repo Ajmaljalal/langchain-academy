@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta
 import pytz
 from oauthlib.oauth2.rfc6749.errors import OAuth2Error
-from utils import create_message, credentials_to_dict, get_credentials
+from utils import create_message, create_reply_to_email_message, credentials_to_dict, get_credentials
 import json
 import os
 from email_manager_agent import run_email_manager
@@ -215,7 +215,7 @@ def todays_emails():
         after = int(today_start.timestamp())
         before = int(now.timestamp())
 
-        query = f'after:{after} before:{before}'
+        query = f'after:{after} before:{before} -in:sent'
 
         results = service.users().messages().list(userId='me', q=query).execute()
         messages = results.get('messages', [])
@@ -227,14 +227,14 @@ def todays_emails():
             subject = next((header['value'] for header in headers if header['name'].lower() == 'subject'), 'No Subject')
             sender = next((header['value'] for header in headers if header['name'].lower() == 'from'), 'Unknown Sender')
             date = next((header['value'] for header in headers if header['name'].lower() == 'date'), 'Unknown Date')
-            internal_date = datetime.fromtimestamp(int(msg['internalDate']) / 1000).isoformat()
+            thread_id = msg['threadId']
             emails.append({
-                'id': msg['id'],
+                'message_id': msg['id'],
                 'subject': subject,
                 'sender': sender,
                 'date': date,
-                'internal_date': internal_date,
-                'snippet': msg['snippet']
+                'snippet': msg['snippet'],
+                'thread_id': thread_id
             })
 
         return jsonify({
@@ -344,17 +344,18 @@ def reply_email():
         return jsonify({'error': 'Not logged in'}), 401
 
     data = request.json
-    recipient = data.get('to')
-    subject = data.get('subject')
+    thread_id = data.get('thread_id')
     body = data.get('body')
-
-    if not all([recipient, body]):
+    subject = data.get('subject')
+    sender = data.get('sender')
+    message_id = data.get('message_id')
+    if not all([thread_id, body, subject, sender, message_id]):
         return jsonify({'error': 'Missing required fields'}), 400
 
     try:
         service = build('gmail', 'v1', credentials=credentials)
-        message = create_message('me', recipient, 'Re: ' + subject, body)
-        sent_message = service.users().messages().send(userId='me', body=message).execute()
+        message = create_reply_to_email_message(sender, subject, body, message_id, thread_id)
+        sent_message = service.users().messages().send(userId="me", body=message).execute()
         return jsonify({'message': 'Email sent successfully', 'id': sent_message['id']})
 
     except HttpError as error:

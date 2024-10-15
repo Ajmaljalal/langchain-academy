@@ -16,11 +16,11 @@ class EmailState(MessagesState):
 
 # Tool definitions (these would call actual APIs in a real implementation)
 @tool
-def reply_to_email(recipient: str, subject: str, body: str) -> str:
-    """Replies to an email with the given recipient, subject, and body."""
-    reply_email_response = requests.post('http://127.0.0.1:5000/reply_email', json={'to': recipient, 'subject': subject, 'body': body})
+def reply_to_email(thread_id: str, subject: str, sender: str, body: str, message_id: str) -> str:
+    """Replies to an email with the given thread_id, subject, message_id, sender, and body."""
+    reply_email_response = requests.post('http://127.0.0.1:5000/reply_email', json={'thread_id': thread_id, 'subject': subject, 'sender': sender, 'body': body, 'message_id': message_id})
     if reply_email_response.status_code == 200:
-        return f"Email replied to {recipient}"
+        return f"Email replied to {thread_id}"
     else:
         return f"Failed to reply to email: {reply_email_response.text}"
 
@@ -40,10 +40,13 @@ def retrieve_emails() -> str:
         
         email_summaries = []
         for email in emails:
+            print(email)
             summary = f"From: {email['sender']}\n"
             summary += f"Subject: {email['subject']}\n"
             summary += f"Date: {email['date']}\n"
             summary += f"Snippet: {email['snippet']}\n"
+            summary += f"Thread ID: {email['thread_id']}\n"
+            summary += f"Message ID: {email['message_id']}\n"
             email_summaries.append(summary)
         
         return "Here are your emails for today:\n\n" + "\n---\n".join(email_summaries)
@@ -62,7 +65,7 @@ def send_email(recipient: str, subject: str, body: str) -> str:
 
 # Create LLM and bind tools
 llm = ChatOpenAI(model="gpt-4o")
-llm_with_tools = llm.bind_tools([retrieve_emails, send_email])
+llm_with_tools = llm.bind_tools([retrieve_emails, send_email, reply_to_email])
 
 # System message
 system_prompt = """
@@ -95,7 +98,7 @@ workflow = StateGraph(EmailState)
 
 # Add nodes
 workflow.add_node("assistant", assistant)
-workflow.add_node("tools", ToolNode([retrieve_emails, send_email]))
+workflow.add_node("tools", ToolNode([retrieve_emails, send_email, reply_to_email]))
 
 # Add edges
 workflow.add_edge(START, "assistant")
@@ -120,8 +123,8 @@ def run_email_manager(user_input: str, thread_id: str):
     try:
         result = email_manager_agent.invoke({"messages": messages}, config)
 
-        for m in result['messages']:
-            m.pretty_print()
+        # for m in result['messages']:
+        #     m.pretty_print()
         
 
         return result.get("messages", [])

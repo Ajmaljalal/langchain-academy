@@ -16,6 +16,15 @@ def create_message(sender, to, subject, message_text):
     raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
     return {'raw': raw_message}
 
+def create_reply_to_email_message(sender, subject, reply_content, message_id, thread_id):
+    message = MIMEText(reply_content)
+    message['to'] = sender
+    message['subject'] = subject
+    message['In-Reply-To'] = message_id
+    message['References'] = message_id
+    raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
+    return {'raw': raw_message, 'threadId': thread_id}
+
 def to_rfc3339(datetime_str):
     try:
         dt = datetime.strptime(datetime_str, "%Y-%m-%dT%H:%M:%SZ")
