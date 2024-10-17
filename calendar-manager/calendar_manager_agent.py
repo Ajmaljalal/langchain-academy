@@ -19,18 +19,15 @@ class CalendarState(MessagesState):
 
 @tool 
 def get_today_date():
-    """Returns today's date in the format MM/DD/YYYY"""
+    """Returns today's date in the format MM/DD/YYYY if needed"""
     month = datetime.now().month
     day = datetime.now().day
     year = datetime.now().year
     return f"{month}/{day}/{year}"
 
 @tool
-def get_calendar_events() -> str:
+def get_calendar_events(month: int, year: int, day: int) -> str:
     """Retrieves calendar events for the specified month and year."""
-    month = datetime.now().month
-    year = datetime.now().year
-    day = datetime.now().day
     response = requests.get(f'http://127.0.0.1:5000/calendar_events?month={month}&year={year}&day={day}')
     if response.status_code == 200:
         events = response.json()
@@ -39,7 +36,9 @@ def get_calendar_events() -> str:
             f"- {event['summary']} (Organizer: {event.get('organizer', 'N/A')}) ({event['start']} - {event['end']})"
             for event in events
         ])
-        return f"Calendar events for {month}/{year}:\n{formatted_events}"
+
+        print('formatted_events:', formatted_events)
+        return f"Calendar events for {month}/{day}/{year}/:\n{formatted_events}"
     else:
         return f"Failed to retrieve events: {response.text}"
 

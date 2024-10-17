@@ -136,7 +136,7 @@ def handle_email_manager():
     
     data = request.json
     user_input = data.get('input')  # Ensure we're retrieving the correct key
-    thread_id = data.get('thread_id', 'default_thread')
+    thread_id = data.get('thread_id', 'default_thread-id')
 
     if not user_input:
         return jsonify({"error": "User input is required"}), 400

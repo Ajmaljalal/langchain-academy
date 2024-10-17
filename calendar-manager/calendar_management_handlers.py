@@ -3,7 +3,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pytz
 from utils import get_credentials
 from calendar_manager_agent import run_calendar_manager
@@ -15,48 +15,74 @@ def get_calendar_events():
     if not credentials:
         return jsonify({'error': 'Not logged in'}), 401
 
-    # Get day, month, and year from query parameters, default to today if not provided
-    day = request.args.get('day', datetime.now().day)
-    month = request.args.get('month', datetime.now().month)
-    year = request.args.get('year', datetime.now().year)
+    try:
+        # Get day, month, and year from query parameters, default to today if not provided
+        day = request.args.get('day', datetime.now(timezone.utc).day)
+        month = request.args.get('month', datetime.now(timezone.utc).month)
+        year = request.args.get('year', datetime.now(timezone.utc).year)
 
-    # Convert to integers
-    day = int(day)
-    month = int(month)
-    year = int(year)
+        # Convert to integers
+        day = int(day)
+        month = int(month)
+        year = int(year)
 
-    # Calculate start and end of the specified day
-    start_of_day = datetime(year, month, day).replace(hour=0, minute=0, second=0, microsecond=0)
-    end_of_day = start_of_day + timedelta(days=1) - timedelta(microseconds=1)
+        # Define UTC timezone
+        tz = timezone.utc
 
-    start_of_day = start_of_day.isoformat() + 'Z'
-    end_of_day = end_of_day.isoformat() + 'Z'
+        # Calculate start and end of the specified day in UTC
+        start_of_day = datetime(year, month, day, 0, 0, 0, tzinfo=tz)
+        end_of_day = start_of_day + timedelta(days=1) - timedelta(microseconds=1)
 
-    service = build('calendar', 'v3', credentials=credentials)
+        # Convert to ISO format with timezone information
+        start_of_day_iso = start_of_day.isoformat()
+        end_of_day_iso = end_of_day.isoformat()
 
-    events_result = service.events().list(calendarId='primary', 
-                                          timeMin=start_of_day,
-                                          timeMax=end_of_day,
-                                          maxResults=1000,
-                                          singleEvents=True, 
-                                          orderBy='startTime').execute()
-    events = events_result.get('items', [])
+        logging.info(f"Fetching events from {start_of_day_iso} to {end_of_day_iso}")
 
-    formatted_events = [
-        {
-            'id': event.get('id'),
-            'start': event['start'].get('dateTime', event['start'].get('date')),
-            'end': event['end'].get('dateTime', event['end'].get('date')),
-            'organizer': event.get('organizer', {}).get('displayName'),
-            'description': event.get('description', 'No description'),
-            'location': event.get('location', 'No location specified'),
-            'status': event.get('status', 'unknown'),
-            'summary': event.get('summary', 'No summary')
-        }
-        for event in events
-    ]
+        service = build('calendar', 'v3', credentials=credentials)
 
-    return jsonify(formatted_events)
+        events_result = service.events().list(
+            calendarId='primary',
+            timeMin=start_of_day_iso,
+            timeMax=end_of_day_iso,
+            maxResults=1000,
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+
+        logging.info(f"API call completed. Response: {events_result}")
+
+        if not events_result or 'items' not in events_result:
+            logging.warning("events_result is empty or does not contain 'items'")
+            return jsonify({'error': 'No events data received from Google Calendar API'}), 200
+
+        events = events_result.get('items', [])
+        logging.info(f"Number of events retrieved: {len(events)}")
+
+        formatted_events = [
+            {
+                'id': event.get('id'),
+                'start': event['start'].get('dateTime', event['start'].get('date')),
+                'end': event['end'].get('dateTime', event['end'].get('date')),
+                'organizer': event.get('organizer', {}).get('displayName'),
+                'description': event.get('description', 'No description'),
+                'location': event.get('location', 'No location specified'),
+                'status': event.get('status', 'unknown'),
+                'summary': event.get('summary', 'No summary')
+            }
+            for event in events
+        ]
+
+        return jsonify(formatted_events), 200
+
+    except HttpError as error:
+        error_content = error.content.decode() if error.content else str(error)
+        logging.error(f"Google Calendar API error: {error_content}")
+        return jsonify({'error': f'Google Calendar API error: {error_content}'}), error.resp.status
+
+    except Exception as e:
+        logging.error(f"Unexpected error in get_calendar_events: {str(e)}")
+        return jsonify({'error': 'An unexpected error occurred.'}), 500
 
 def create_event():
     credentials = get_credentials(current_app, session) 
