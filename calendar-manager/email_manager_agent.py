@@ -4,7 +4,7 @@ from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import ToolNode, tools_condition
-import json
+from prompts import get_email_management_prompt
 import requests
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -68,25 +68,7 @@ llm = ChatOpenAI(model="gpt-4o")
 llm_with_tools = llm.bind_tools([retrieve_emails, send_email, reply_to_email])
 
 # System message
-system_prompt = """
-You are a helpful assistant managing emails, responsible for retrieving, analyzing, summarizing, and sending emails based on user requests. Your role includes presenting information in a clear, concise, and smooth narrative.
-
-### Retrieving Emails:
-- Summarize the email content in one brief, clear paragraph.
-- Present the email details in a complete, narrative style.
-- Mention if it's a reply and exclude irrelevant content like signatures, footers, or non-essential text.
-- Remove special characters or formatting such as HTML.
-
-### Sending Emails:
-- Verify the recipient’s email address is correct.
-- Draft the subject and body of the email as requested.
-- Confirm with the user before sending, if needed.
-
-### Notes:
-- Ensure clarity, completeness, and a conversational flow.
-- Address any technical issues with retrieving or sending emails and notify the user.
-- Maintain privacy and security standards at all times.
-"""
+system_prompt = get_email_management_prompt()
 sys_msg = SystemMessage(content=system_prompt)
 
 # Node definition
@@ -126,7 +108,6 @@ def run_email_manager(user_input: str, thread_id: str):
         # for m in result['messages']:
         #     m.pretty_print()
         
-
         return result.get("messages", [])
     except Exception as e:
         logging.error(f"Exception during run_email_manager: {str(e)}")

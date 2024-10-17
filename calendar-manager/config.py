@@ -3,7 +3,7 @@ import json
 from oauthlib.oauth2 import WebApplicationClient
 
 def configure_app(app):
-    app.secret_key = 'your_secret_key'  # Set this to a random secret string
+    app.secret_key = 'test_secret_key'  # Set this to a random secret string
 
     # Load client secrets from file
     CLIENT_SECRETS_FILE = "client_secret.json"

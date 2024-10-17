@@ -179,7 +179,7 @@ function sendMessage() {
     addMessageToChat('user', message);
     userInput.value = '';
 
-    axios.post('/email_manager', { input: message })
+    axios.post('/calendar_manager', { input: message })
       .then(response => {
         const aiResponses = response.data.response;
         aiResponses.forEach(response => {
