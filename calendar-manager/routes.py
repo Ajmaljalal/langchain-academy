@@ -13,6 +13,7 @@ def register_routes(app):
     bp.route('/check_login', endpoint='check_login')(main_handlers.check_login)
     bp.route('/login', endpoint='login')(lambda: main_handlers.login(app))
     bp.route('/oauth2callback', endpoint='oauth2callback')(lambda: main_handlers.oauth2callback(app))
+    bp.route('/super_manager', methods=['POST'], endpoint='super_manager')(lambda: main_handlers.super_manager(app))
 
 
     ###### calender management routes ######

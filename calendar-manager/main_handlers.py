@@ -5,7 +5,7 @@ from oauthlib.oauth2.rfc6749.errors import OAuth2Error
 from utils import credentials_to_dict, get_credentials
 import json
 import os
-
+from super_manager import run_super_manager
 def index():
     return render_template('index.html')
 
@@ -90,3 +90,24 @@ def oauth2callback(app):
     except Exception as e:
         logging.error(f"Error in oauth2callback: {str(e)}")
         return jsonify({'error': 'An unexpected error occurred. Please try again.'}), 500
+
+def super_manager(app):
+    credentials = get_credentials(app, session)
+    if not credentials:
+        return jsonify({'error': 'Not logged in'}), 401
+    
+    if not request.json or 'input' not in request.json or 'thread_id' not in request.json:
+        return jsonify({'error': 'Invalid request, user_input and thread_id are required'}), 400
+    
+    try:
+        user_input = request.json.get('input')
+        thread_id = request.json.get('thread_id')
+        result = run_super_manager(user_input, thread_id)
+        if not result:
+            ai_response = "Was not able to get a information, sorry!"
+        else:
+            ai_response = result[-1].content if hasattr(result[-1], 'content') else "No response generated."
+        return jsonify({'response': [ai_response]})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+

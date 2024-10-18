@@ -105,8 +105,8 @@ def run_email_manager(user_input: str, thread_id: str):
     try:
         result = email_manager_agent.invoke({"messages": messages}, config)
 
-        # for m in result['messages']:
-        #     m.pretty_print()
+        for m in result['messages']:
+            m.pretty_print()
         
         return result.get("messages", [])
     except Exception as e:

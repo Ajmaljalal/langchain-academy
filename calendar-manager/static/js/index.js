@@ -179,7 +179,9 @@ function sendMessage() {
     addMessageToChat('user', message);
     userInput.value = '';
 
-    axios.post('/calendar_manager', { input: message })
+    const thread_id = "default_thread_id"
+
+    axios.post('/super_manager', { input: message, thread_id: thread_id })
       .then(response => {
         const aiResponses = response.data.response;
         aiResponses.forEach(response => {
