@@ -3,12 +3,10 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 import pytz
 from utils import get_credentials
 from calendar_manager_agent import run_calendar_manager
-
-
 
 def get_calendar_events():
     credentials = get_credentials(current_app, session)
@@ -16,28 +14,29 @@ def get_calendar_events():
         return jsonify({'error': 'Not logged in'}), 401
 
     try:
-        # Get day, month, and year from query parameters, default to today if not provided
-        day = request.args.get('day', datetime.now(timezone.utc).day)
-        month = request.args.get('month', datetime.now(timezone.utc).month)
-        year = request.args.get('year', datetime.now(timezone.utc).year)
+        now = datetime.now()
+        day = request.args.get('day', type=int)
+        month = request.args.get('month', type=int)
+        year = request.args.get('year', type=int)
 
-        # Convert to integers
-        day = int(day)
-        month = int(month)
-        year = int(year)
+        if day is None:
+            day = now.day
+        if month is None:
+            month = now.month
+        if year is None:
+            year = now.year
 
-        # Define UTC timezone
-        tz = timezone.utc
+        # Define user's local timezone (modify as needed)
+        user_timezone = pytz.timezone('America/New_York')  # Replace with user's actual timezone
 
-        # Calculate start and end of the specified day in UTC
-        start_of_day = datetime(year, month, day, 0, 0, 0, tzinfo=tz)
-        end_of_day = start_of_day + timedelta(days=1) - timedelta(microseconds=1)
+        start_of_day = user_timezone.localize(datetime(year, month, day, 0, 0, 0))
+        end_of_day = user_timezone.localize(datetime(year, month, day, 23, 59, 59))
 
-        # Convert to ISO format with timezone information
+        # Convert to ISO 8601 format with timezone information
         start_of_day_iso = start_of_day.isoformat()
         end_of_day_iso = end_of_day.isoformat()
 
-        logging.info(f"Fetching events from {start_of_day_iso} to {end_of_day_iso}")
+        logging.debug(f"Fetching events from {start_of_day_iso} to {end_of_day_iso}")
 
         service = build('calendar', 'v3', credentials=credentials)
 
@@ -50,22 +49,20 @@ def get_calendar_events():
             orderBy='startTime'
         ).execute()
 
-        logging.info(f"API call completed. Response: {events_result}")
-
-        if not events_result or 'items' not in events_result:
-            logging.warning("events_result is empty or does not contain 'items'")
-            return jsonify({'error': 'No events data received from Google Calendar API'}), 200
-
         events = events_result.get('items', [])
-        logging.info(f"Number of events retrieved: {len(events)}")
+        print('events:', events)
+        if not events:
+            logging.info("No events found for the specified date.")
+            return jsonify({'message': 'No events found for the specified date.'}), 200
 
         formatted_events = [
             {
                 'id': event.get('id'),
                 'start': event['start'].get('dateTime', event['start'].get('date')),
                 'end': event['end'].get('dateTime', event['end'].get('date')),
-                'organizer': event.get('organizer', {}).get('displayName'),
-                'description': event.get('description', 'No description'),
+                'organizer': event.get('organizer', {}).get('email'),
+                'creator': event.get('creator', {}).get('email'),
+                'am_i_organizing': event.get('creator', {}).get('self'),
                 'location': event.get('location', 'No location specified'),
                 'status': event.get('status', 'unknown'),
                 'summary': event.get('summary', 'No summary')
@@ -73,6 +70,7 @@ def get_calendar_events():
             for event in events
         ]
 
+        logging.info(f"Retrieved {len(formatted_events)} events.")
         return jsonify(formatted_events), 200
 
     except HttpError as error:
@@ -131,54 +129,81 @@ def get_availabilities():
     if not credentials:
         return jsonify({'error': 'Not logged in'}), 401
 
-    # Get the current month and year
-    now = datetime.now()
-    year = now.year
-    month = now.month
+    try:
 
-    # Calculate start and end of the month
-    start_of_month = datetime(year, month, 1, tzinfo=pytz.UTC)
-    if month == 12:
-        end_of_month = datetime(year + 1, 1, 1, tzinfo=pytz.UTC) - timedelta(seconds=1)
-    else:
-        end_of_month = datetime(year, month + 1, 1, tzinfo=pytz.UTC) - timedelta(seconds=1)
+        day = request.args.get('day', type=int)
+        month = request.args.get('month', type=int)
+        year = request.args.get('year', type=int)
 
-    credentials = Credentials(**session['credentials'])
-    service = build('calendar', 'v3', credentials=credentials)
+        now = datetime.now()
 
-    events_result = service.events().list(calendarId='primary', 
-                                          timeMin=start_of_month.isoformat(),
-                                          timeMax=end_of_month.isoformat(),
-                                          singleEvents=True, 
-                                          orderBy='startTime').execute()
-    events = events_result.get('items', [])
+        if day is None:
+            day = now.day
+        if month is None:
+            month = now.month
+        if year is None:
+            year = now.year
 
-    # Convert events to datetime objects
-    busy_times = []
-    for event in events:
-        start = event['start'].get('dateTime', event['start'].get('date'))
-        end = event['end'].get('dateTime', event['end'].get('date'))
-        start = datetime.fromisoformat(start.replace('Z', '+00:00'))
-        end = datetime.fromisoformat(end.replace('Z', '+00:00'))
-        busy_times.append((start, end))
-    # Sort busy times
-    busy_times.sort(key=lambda x: x[0])
-    # Calculate available times
-    available_times = []
-    current_time = start_of_month
-    for busy_start, busy_end in busy_times:
-        if current_time < busy_start:
+        # Define user's local timezone (modify as needed)
+        user_timezone = pytz.timezone('America/New_York')  # Replace with user's actual timezone
+
+        # Create timezone-aware datetime objects for start and end of the day
+        start_of_day = user_timezone.localize(datetime(year, month, day, 0, 0, 0))
+        end_of_day = user_timezone.localize(datetime(year, month, day, 23, 59, 59))
+
+        # Convert to ISO 8601 format with timezone information
+        start_of_day_iso = start_of_day.isoformat()
+        end_of_day_iso = end_of_day.isoformat()
+
+        service = build('calendar', 'v3', credentials=credentials)
+
+        events_result = service.events().list(
+            calendarId='primary',
+            timeMin=start_of_day_iso,
+            timeMax=end_of_day_iso,
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+        events = events_result.get('items', [])
+
+        # Convert events to datetime objects
+        busy_times = []
+        for event in events:
+            start = event['start'].get('dateTime', event['start'].get('date'))
+            end = event['end'].get('dateTime', event['end'].get('date'))
+            start = datetime.fromisoformat(start.replace('Z', '+00:00')).astimezone(user_timezone)
+            end = datetime.fromisoformat(end.replace('Z', '+00:00')).astimezone(user_timezone)
+            busy_times.append((start, end))
+
+        # Sort busy times
+        busy_times.sort(key=lambda x: x[0])
+
+        # Calculate available times
+        available_times = []
+        current_time = start_of_day
+        for busy_start, busy_end in busy_times:
+            if current_time < busy_start:
+                available_times.append({
+                    'start': current_time.isoformat(),
+                    'end': busy_start.isoformat()
+                })
+            current_time = max(current_time, busy_end)
+        if current_time < end_of_day:
             available_times.append({
                 'start': current_time.isoformat(),
-                'end': busy_start.isoformat()
+                'end': end_of_day.isoformat()
             })
-        current_time = max(current_time, busy_end)
-    if current_time < end_of_month:
-        available_times.append({
-            'start': current_time.isoformat(),
-            'end': end_of_month.isoformat()
-          })
-    return jsonify(available_times)
+
+        return jsonify(available_times), 200
+
+    except HttpError as error:
+        error_content = error.content.decode() if error.content else str(error)
+        logging.error(f"Google Calendar API error: {error_content}")
+        return jsonify({'error': f'Google Calendar API error: {error_content}'}), error.resp.status
+
+    except Exception as e:
+        logging.error(f"Unexpected error in get_availabilities: {str(e)}")
+        return jsonify({'error': 'An unexpected error occurred.'}), 500
 
 def handle_calendar_manager():
     credentials = get_credentials(current_app, session)

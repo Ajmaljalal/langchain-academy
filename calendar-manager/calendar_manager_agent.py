@@ -19,7 +19,8 @@ class CalendarState(MessagesState):
 
 @tool 
 def get_today_date():
-    """Returns today's date in the format MM/DD/YYYY if needed"""
+    """Returns today's date in the format MM/DD/YYYY"""
+    """Use this tool if you need to know the current date"""
     month = datetime.now().month
     day = datetime.now().day
     year = datetime.now().year
@@ -27,7 +28,10 @@ def get_today_date():
 
 @tool
 def get_calendar_events(month: int, year: int, day: int) -> str:
-    """Retrieves calendar events for the specified month and year."""
+    """Retrieves calendar events for the specified day, month, and year."""
+    """Use this tool if you need to know the events for a specific day(s)"""
+    """Always use get_today_date tool if you need to know the current date"""
+
     response = requests.get(f'http://127.0.0.1:5000/calendar_events?month={month}&year={year}&day={day}')
     if response.status_code == 200:
         events = response.json()
@@ -37,7 +41,6 @@ def get_calendar_events(month: int, year: int, day: int) -> str:
             for event in events
         ])
 
-        print('formatted_events:', formatted_events)
         return f"Calendar events for {month}/{day}/{year}/:\n{formatted_events}"
     else:
         return f"Failed to retrieve events: {response.text}"
@@ -60,9 +63,9 @@ def create_event(summary: str, start: str, end: str, description: str = "", loca
         return f"Failed to create event: {response.text}"
 
 @tool
-def get_availabilities() -> str:
-    """Retrieves available time slots for the current month."""
-    response = requests.get('http://127.0.0.1:5000/availabilities')
+def get_availabilities(month: int, year: int, day: int) -> str:
+    """Retrieves available time slots for the requested day(s)."""
+    response = requests.get(f'http://127.0.0.1:5000/availabilities?month={month}&year={year}&day={day}')
     if response.status_code == 200:
         availabilities = response.json()
         # Format the availabilities as a string
